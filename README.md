@@ -100,6 +100,21 @@ Get the status of all jobs.
    git clone https://github.com/yourusername/aws-serverless-job-processing.git
    cd aws-serverless-job-processing
    ```
+  Create a .env file
+  ```code
+# Load environment variables
+Project=async-job-processing-framework
+COGNITO_REGION=us-east-1
+COGNITO_USER_POOL_ID=us-east-1_xxxxxxxxxx
+COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxx
+USER_POOL_ARN=arn:aws:cognito-idp:us-east-1:xxxxxxxxxxxx:userpool/us-east-1_xxxxxxxxx
+ISSUER_URL=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxxx
+API_ENV=dev
+STACK_NAME=job-processing-stack
+TEMPLATE_FILE=template.yaml
+PARAMETERS_FILE=updated-parameters.json
+REGION=${COGNITO_REGION}
+```
 
 2. **Deploy the stack:**
    ```bash
