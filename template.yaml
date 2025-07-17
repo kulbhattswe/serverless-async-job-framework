@@ -1,0 +1,651 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Serverless Job Processing Stack with API Gateway v2.0, Lambda, SQS, DynamoDB, and S3'
+
+Parameters:
+  Project:
+    Type: String
+    Description: Project name tag to be applied to all resources
+    Default: JobProcessingDemo
+  
+  UserPoolArn:
+    Type: String
+    Description: ARN of the existing Cognito User Pool
+  
+  IssuerUrl:
+    Type: String
+    Description: The issuer URL of the existing User Pool
+  
+  CognitoClientId:
+    Type: String
+    Description: Cognito App Client ID
+  
+  ApiEnv:
+    Type: String
+    Description: Environment for API deployment
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  # S3 Bucket for job files
+  JobsDemoBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'jobsdemobucket-${AWS::AccountId}-${AWS::Region}'
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteAfter30Minutes
+            Status: Enabled
+            ExpirationInDays: 1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # DynamoDB Table for jobs
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Project}-jobs'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-date-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # SQS Queue for job processing
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${Project}-jobs-queue'
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 1209600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JobsDeadLetterQueue.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # Dead Letter Queue
+  JobsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${Project}-jobs-dlq'
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # CloudWatch Log Groups
+  JobHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Project}-jobhandler'
+      RetentionInDays: 14
+
+  JobHandlerWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Project}-jobhandlerworker'
+      RetentionInDays: 14
+
+  # IAM Role for JobHandler Lambda
+  JobHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Project}-JobHandlerRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: JobHandlerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt JobsQueue.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource: 
+                  - !GetAtt JobsTable.Arn
+                  - !Sub '${JobsTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub '${JobHandlerLogGroup.Arn}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # IAM Role for JobHandlerWorker Lambda
+  JobHandlerWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Project}-JobHandlerWorkerRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: JobHandlerWorkerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt JobsQueue.Arn
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub '${JobsDemoBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt JobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub '${JobHandlerWorkerLogGroup.Arn}:*'
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # JobHandler Lambda Function (Updated for API Gateway v2.0)
+  JobHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Project}-jobhandler'
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt JobHandlerRole.Arn
+      Timeout: 60
+      MemorySize: 128
+      Environment:
+        Variables:
+          JOBS_QUEUE_URL: !Ref JobsQueue
+          JOBS_TABLE_NAME: !Ref JobsTable
+          S3_BUCKET_NAME: !Ref JobsDemoBucket
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime, timezone
+          from boto3.dynamodb.conditions import Key
+          import logging
+          
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          sqs = boto3.client('sqs')
+          dynamodb = boto3.resource('dynamodb')
+          
+          def response(status_code, body):
+            return {
+                'statusCode': status_code,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                    'Access-Control-Allow-Methods': 'OPTIONS,GET,POST'
+                },
+                'body': json.dumps(body)
+            }
+
+          def lambda_handler(event, context):
+              try:
+                  logger.info(f"Incoming event: {json.dumps(event)}")
+                  
+                  # API Gateway v2.0 uses different event structure
+                  http_method = event['requestContext']['http']['method']
+                  route_key = event['routeKey']
+                  
+                  if route_key == 'POST /job':
+                      return handle_post(event, context)
+                  elif route_key == 'GET /job':
+                      return handle_get(event, context)
+                  elif route_key == 'GET /jobs':
+                      return handle_get_all_jobs(event, context)
+                  elif route_key == 'GET /ping':
+                      return handle_ping(event, context)
+                  else:
+                      return response(405, {'error': 'Method not allowed'})
+                                            
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  return response(500, {'error': 'Internal server error'})
+                            
+          def handle_post(event, context):
+              # Extract user_id from JWT claims (v2.0 format)
+              jwt_claims = event['requestContext']['authorizer']['jwt']['claims']
+              user_id = jwt_claims['sub']
+              
+              # Parse request body
+              body = json.loads(event['body'])
+              name = body.get('name')
+              action = body.get('action')
+              context1 = body.get('context1')
+              context2 = body.get('context2')
+              
+              # Generate job_id
+              job_id = str(uuid.uuid4())
+              
+              # Create job item for SQS
+              job_item = {
+                  'job_id': job_id,
+                  'name': name,
+                  'action': action,
+                  'context1': context1,
+                  'context2': context2,
+                  'user_id': user_id
+              }
+              
+              # Send to SQS
+              sqs.send_message(
+                  QueueUrl=os.environ['JOBS_QUEUE_URL'],
+                  MessageBody=json.dumps(job_item)
+              )
+              
+              # Create DynamoDB entry
+              table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+              table.put_item(
+                  Item={
+                      'job_id': job_id,
+                      'user_id': user_id,
+                      'status': 'PENDING',
+                      'createdAt': datetime.now(timezone.utc).isoformat(),
+                      'action': action,
+                      'name': name
+                  }
+              )
+              
+              return response(201, {'job_id': job_id, 'status': 'PENDING'})
+                      
+          def handle_get(event, context):
+              # Get job_id from query parameters
+              job_id = event['queryStringParameters'].get('job_id') if event.get('queryStringParameters') else None
+              
+              if not job_id:
+                  return response(400, {'error': 'job_id parameter is required'})
+                                
+              # Get job from DynamoDB
+              table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+              db_response = table.get_item(Key={'job_id': job_id})
+              
+              if 'Item' not in db_response:
+                  return response(404, {'error': 'Job not found'})
+                  
+              item = db_response['Item']
+              result = {
+                  'job_id': item['job_id'],
+                  'status': item['status'],
+                  'createdAt': item['createdAt'],
+                  'action': item['action']
+              }
+              
+              if 'name' in item:
+                  result['name'] = item['name']
+              
+              if 'S3FileKey' in item:
+                  result['S3FileKey'] = item['S3FileKey']
+              
+              return response(200, result)
+              
+          def handle_get_all_jobs(event, context):
+              # Extract user_id from JWT claims (v2.0 format)
+              jwt_claims = event['requestContext']['authorizer']['jwt']['claims']
+              user_id = jwt_claims['sub']
+              
+              # Get today's date range
+              today = datetime.now(timezone.utc).date()
+              start_of_day = datetime.combine(today, datetime.min.time(), timezone.utc).isoformat()
+              end_of_day = datetime.combine(today, datetime.max.time(), timezone.utc).isoformat()
+              
+              # Query DynamoDB using GSI
+              table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+              
+              try:
+                  db_response = table.query(
+                      IndexName='user-date-index',
+                      KeyConditionExpression=Key('user_id').eq(user_id) & Key('createdAt').between(start_of_day, end_of_day),
+                      ScanIndexForward=False  # Sort by createdAt descending (newest first)
+                  )
+                  
+                  jobs = []
+                  for item in db_response['Items']:
+                      job_data = {
+                          'job_id': item['job_id'],
+                          'status': item['status'],
+                          'createdAt': item['createdAt'],
+                          'action': item['action']
+                      }
+                      
+                      if 'name' in item:
+                          job_data['name'] = item['name']
+                      
+                      if 'S3FileKey' in item:
+                          job_data['S3FileKey'] = item['S3FileKey']
+                      
+                      jobs.append(job_data)
+                  
+                  return response(200, {
+                          'jobs': jobs,
+                          'count': len(jobs),
+                          'date': today.isoformat()
+                  })                                    
+                  
+              except Exception as e:
+                  logger.error(f"Error querying jobs: {str(e)}")
+                  return response(500, {'error': 'Failed to retrieve jobs'})
+ 
+          def handle_ping(event, context):
+              return response(200, {'message': 'ping ok'})
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # JobHandlerWorker Lambda Function (unchanged)
+  JobHandlerWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Project}-jobhandlerworker'
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt JobHandlerWorkerRole.Arn
+      Timeout: 60
+      MemorySize: 128
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTable
+          S3_BUCKET_NAME: !Ref JobsDemoBucket
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          import logging
+          
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          s3 = boto3.client('s3')
+          dynamodb = boto3.resource('dynamodb')
+          
+          def lambda_handler(event, context):
+              try:
+                  logger.info(f"Incoming event: {json.dumps(event)}")
+                  for record in event['Records']:
+                      # Parse SQS message
+                      job_item = json.loads(record['body'])
+                      
+                      job_id = job_item['job_id']
+                      user_id = job_item['user_id']
+                      context1 = job_item['context1']
+                      context2 = job_item['context2']
+                      
+                      # Concatenate context1 and context2
+                      content = f"{context1}{context2}"
+                      
+                      # Create S3 key
+                      current_date = datetime.utcnow().strftime('%Y-%m-%d')
+                      s3_key = f"{user_id}/{current_date}/{job_id}.txt"
+                      
+                      # Save to S3
+                      s3.put_object(
+                          Bucket=os.environ['S3_BUCKET_NAME'],
+                          Key=s3_key,
+                          Body=content.encode('utf-8'),
+                          ContentType='text/plain'
+                      )
+                      
+                      # Update DynamoDB entry
+                      table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+                      table.update_item(
+                          Key={'job_id': job_id},
+                          UpdateExpression='SET #status = :status, S3FileKey = :s3key',
+                          ExpressionAttributeNames={'#status': 'status'},
+                          ExpressionAttributeValues={
+                              ':status': 'COMPLETE',
+                              ':s3key': s3_key
+                          }
+                      )
+                      
+                      print(f"Successfully processed job {job_id}")
+                      
+              except Exception as e:
+                  print(f"Error processing job: {str(e)}")
+                  raise e
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+
+  # Event Source Mapping for SQS to Lambda
+  JobHandlerWorkerEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt JobsQueue.Arn
+      FunctionName: !Ref JobHandlerWorkerFunction
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  # API Gateway v2.0 (HTTP API)
+  JobProcessingApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${Project}-JobProcessingApi'
+      Description: 'HTTP API for job processing'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowCredentials: false
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Amz-Date
+          - X-Api-Key
+          - X-Amz-Security-Token
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowOrigins:
+          - '*'
+        MaxAge: 86400
+      Tags:
+        Project: !Ref Project
+
+  # JWT Authorizer for API Gateway v2.0
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      Name: !Sub '${Project}-JwtAuthorizer'
+      ApiId: !Ref JobProcessingApi
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - !Ref CognitoClientId
+        Issuer: !Ref IssuerUrl
+
+  # Lambda Integration
+  JobHandlerIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref JobProcessingApi
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${JobHandlerFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  # Routes
+  JobPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobProcessingApi
+      RouteKey: 'POST /job'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${JobHandlerIntegration}'
+
+  JobGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobProcessingApi
+      RouteKey: 'GET /job'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${JobHandlerIntegration}'
+
+  JobsGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobProcessingApi
+      RouteKey: 'GET /jobs'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${JobHandlerIntegration}'
+
+  PingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobProcessingApi
+      RouteKey: 'GET /ping'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${JobHandlerIntegration}'
+
+  # Stage (automatically deploys in v2.0)
+  JobProcessingApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref JobProcessingApi
+      StageName: !Ref ApiEnv
+      Description: !Sub 'Deployment for ${ApiEnv} environment'
+      AutoDeploy: true
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: true
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","error":"$context.error.message","integrationError":"$context.integration.error"}'
+      Tags:
+        Project: !Ref Project
+
+  # Lambda Permission for API Gateway v2.0
+  JobHandlerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JobHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${JobProcessingApi}/*/*'
+
+  # CloudWatch Log Group for API Gateway
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${Project}-JobProcessingApi'
+      RetentionInDays: 14
+
+Outputs:
+  ApiGatewayUrl:
+    Description: 'API Gateway URL'
+    Value: !Sub 'https://${JobProcessingApi}.execute-api.${AWS::Region}.amazonaws.com/${ApiEnv}'
+    Export:
+      Name: !Sub '${Project}-ApiGatewayUrl'
+
+  ApiGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref JobProcessingApi
+    Export:
+      Name: !Sub '${Project}-ApiGatewayId'
+
+  JobsTableName:
+    Description: 'DynamoDB Jobs Table Name'
+    Value: !Ref JobsTable
+    Export:
+      Name: !Sub '${Project}-JobsTableName'
+
+  JobsQueueUrl:
+    Description: 'SQS Jobs Queue URL'
+    Value: !Ref JobsQueue
+    Export:
+      Name: !Sub '${Project}-JobsQueueUrl'
+
+  S3BucketName:
+    Description: 'S3 Bucket Name for job files'
+    Value: !Ref JobsDemoBucket
+    Export:
+      Name: !Sub '${Project}-S3BucketName'
+
+  JobHandlerFunctionName:
+    Description: 'Job Handler Lambda Function Name'
+    Value: !Ref JobHandlerFunction
+    Export:
+      Name: !Sub '${Project}-JobHandlerFunctionName'
+
+  JobHandlerWorkerFunctionName:
+    Description: 'Job Handler Worker Lambda Function Name'
+    Value: !Ref JobHandlerWorkerFunction
+    Export:
+      Name: !Sub '${Project}-JobHandlerWorkerFunctionName'
+
+  JwtAuthorizerId:
+    Description: 'JWT Authorizer ID'
+    Value: !Ref JwtAuthorizer
+    Export:
+      Name: !Sub '${Project}-JwtAuthorizerId'

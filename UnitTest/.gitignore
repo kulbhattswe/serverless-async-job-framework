@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+
+# Unit test cache
+.pytest_cache/
+coverage.xml
+htmlcov/
+.cache/
+
+# Environment files
+.env
+*.env
+
+# Mac & VSCode
+.DS_Store
+.vscode/
+
+# Python virtualenvs
+venv/
+.env/
+
+#code
+minimaltest.py

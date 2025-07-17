@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "Project",
+    "ParameterValue": "JobProcessingDemo"
+  },
+  {
+    "ParameterKey": "UserPoolArn",
+    "ParameterValue": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_XXXXXXXXX"
+  },
+  {
+    "ParameterKey": "IssuerUrl",
+    "ParameterValue": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_XXXXXXXXX"
+  },
+  {
+    "ParameterKey": "CognitoClientId",
+    "ParameterValue": "your-cognito-client-id"
+  },
+  {
+    "ParameterKey": "ApiEnv",
+    "ParameterValue": "dev"
+  }
+]
