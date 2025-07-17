@@ -149,6 +149,11 @@ Resources:
                   - !Sub '${JobsTable.Arn}/index/*'
               - Effect: Allow
                 Action:
+                  - s3:GetObject
+                Resource: !Sub '${JobsDemoBucket.Arn}/*'
+
+              - Effect: Allow
+                Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
@@ -226,12 +231,16 @@ Resources:
           from datetime import datetime, timezone
           from boto3.dynamodb.conditions import Key
           import logging
+          import traceback
+
+          #logging.basicConfig(level=logging.INFO)  
           
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
           sqs = boto3.client('sqs')
           dynamodb = boto3.resource('dynamodb')
-          
+          s3 = boto3.client('s3')
+
           def response(status_code, body):
             return {
                 'statusCode': status_code,
@@ -243,7 +252,12 @@ Resources:
                 },
                 'body': json.dumps(body)
             }
-
+          def generate_presigned_url(key):
+            return s3.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': os.environ['S3_BUCKET_NAME'], 'Key': key},
+                ExpiresIn=3600  # 1 hour
+            )
           def lambda_handler(event, context):
               try:
                   logger.info(f"Incoming event: {json.dumps(event)}")
@@ -291,7 +305,9 @@ Resources:
                   'context2': context2,
                   'user_id': user_id
               }
-              
+                 
+              logger.info(f"Sending to queue job_item={job_item}")
+                  
               # Send to SQS
               sqs.send_message(
                   QueueUrl=os.environ['JOBS_QUEUE_URL'],
@@ -314,6 +330,7 @@ Resources:
               return response(201, {'job_id': job_id, 'status': 'PENDING'})
                       
           def handle_get(event, context):
+            try:
               # Get job_id from query parameters
               job_id = event['queryStringParameters'].get('job_id') if event.get('queryStringParameters') else None
               
@@ -334,14 +351,24 @@ Resources:
                   'createdAt': item['createdAt'],
                   'action': item['action']
               }
-              
+              logger.info(f"Retrieved item: {item}")
               if 'name' in item:
                   result['name'] = item['name']
               
-              if 'S3FileKey' in item:
-                  result['S3FileKey'] = item['S3FileKey']
-              
+              if 'S3FileKey' in item and item['S3FileKey']:
+                  # Generate presigned URL for S3 file if it exists 
+                  presigned_url = generate_presigned_url(item['S3FileKey'])
+                  if presigned_url:
+                    result['presigned_url'] = presigned_url
+                    result['S3FileKey'] = item['S3FileKey']
+                  elif item['status'] != 'PENDING':
+                      logger.warning(f"No S3FileKey found for job_id: {job_id}")
+                  
               return response(200, result)
+            except Exception as e:
+              logging.error("Exception occurred", exc_info=True)
+              logger.error(f"Error retrieving job: {str(e)}")
+              raise e
               
           def handle_get_all_jobs(event, context):
               # Extract user_id from JWT claims (v2.0 format)
@@ -415,7 +442,7 @@ Resources:
           import json
           import boto3
           import os
-          from datetime import datetime
+          from datetime import datetime, timezone
           import logging
           
           logger = logging.getLogger()
@@ -431,13 +458,21 @@ Resources:
                       # Parse SQS message
                       job_item = json.loads(record['body'])
                       
+                      logger.info(f"Processing job item: {job_item}")
                       job_id = job_item['job_id']
                       user_id = job_item['user_id']
                       context1 = job_item['context1']
                       context2 = job_item['context2']
                       
+                      now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
+                      now_str = now_utc.strftime("%Y-%m-%d %H:%M:%S %Z%z")
                       # Concatenate context1 and context2
-                      content = f"{context1}{context2}"
+                      content = (
+                                f"async job framework processed job {job_id}\n"
+                                f"Job processed at {now_str}\n"
+                                f"{context1}\n"
+                                f"{context2}\n"
+                      )
                       
                       # Create S3 key
                       current_date = datetime.utcnow().strftime('%Y-%m-%d')
