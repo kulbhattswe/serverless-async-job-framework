@@ -33,7 +33,7 @@ def update_parameters(params_file, env_vars, output_file):
         json.dump(params, f, indent=2)
 
 if __name__ == "__main__":
-    ENV_FILE = ".env"
+    ENV_FILE = ".env.generated"
     PARAM_FILE = "parameters_template.json"
     OUTPUT_FILE = "updated-parameters.json"
 

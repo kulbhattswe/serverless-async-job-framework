@@ -3,7 +3,64 @@
 # AWS Serverless Job Processing Stack Deployment Script
 
 set -e
+
+# Load environment variables
 source .env
+
+# Derive CODE_BUCKET from naming convention: should already have it from .env
+#ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+#CODE_BUCKET_NAME="jobsdemocodebucket-${ACCOUNT_ID}-${REGION}"
+
+echo "Using S3 bucket for Lambda code: $CODE_BUCKET_NAME, region: $REGION"
+
+# Create bucket if it doesn't exist
+if ! aws s3 ls "s3://$CODE_BUCKET_NAME" > /dev/null 2>&1; then
+  echo "Creating bucket: $CODE_BUCKET_NAME"
+  if [ "$REGION" = "us-east-1" ]; then
+     aws s3api create-bucket \
+        --bucket "$CODE_BUCKET_NAME" \
+        --region "$REGION"
+  else
+    aws s3api create-bucket \
+        --bucket "$CODE_BUCKET_NAME" \
+        --region "$REGION" \
+        --create-bucket-configuration LocationConstraint="$REGION"
+   fi
+
+else
+  echo "Bucket already exists"
+fi
+
+# Zip Lambda functions
+echo "Zipping Lambda functions..."
+zip -j jobhandler.zip src/jobhandler.py
+zip -j jobworker.zip src/jobworker.py
+
+# Upload to S3
+echo "Uploading zips to S3..."
+upload_if_changed() {
+  local file=$1
+  local key=$2
+
+  echo "Checking if upload is needed for $file..."
+  local local_md5=$(md5sum "$file" | awk '{{print $1}}')
+
+  local s3_md5=$(aws s3api head-object \
+    --bucket "$CODE_BUCKET_NAME" \
+    --key "$key" \
+    --query ETag --output text 2>/dev/null | tr -d '"')
+
+  if [[ "$local_md5" != "$s3_md5" ]]; then
+    echo "Uploading $file to s3://$CODE_BUCKET_NAME/$key"
+    aws s3 cp "$file" "s3://$CODE_BUCKET_NAME/$key"
+  else
+    echo "No changes in $file. Skipping upload."
+  fi
+}
+
+upload_if_changed jobhandler.zip lambda/jobhandler.zip
+upload_if_changed jobworker.zip lambda/jobworker.zip
+
 
 # Colors for output
 RED='\033[0;31m'

@@ -18,5 +18,9 @@
   {
     "ParameterKey": "ApiEnv",
     "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "CodeBucketName",
+    "ParameterValue": "bucket"
   }
 ]

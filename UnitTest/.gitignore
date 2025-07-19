@@ -16,6 +16,7 @@ htmlcov/
 # Environment files
 .env
 *.env
+.env.*
 
 # Mac & VSCode
 .DS_Store
