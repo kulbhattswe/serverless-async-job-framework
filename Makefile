@@ -24,11 +24,13 @@ $(VALID_TARGETS): %: $(UPDATED_FILE) $(DEPLOY_SCRIPT)
 .PHONY: generate-env
 
 generate-env:
+	@echo "Generating environment variables file..."
 	./expand_env.sh
 
 .PHONY: update-parameters
 
 update-parameters: generate-env
+	@echo "Updating parameters file..."
 	python update_parameters.py
 
 
