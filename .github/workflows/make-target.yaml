@@ -68,4 +68,5 @@ jobs:
       - name: Run make target
         run: |
           set -x  # <- print commands before execution
+          export $(grep -v '^#' .env | xargs)
           make ${{ github.event.inputs.target }}
