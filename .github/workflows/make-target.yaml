@@ -26,7 +26,7 @@ env:
   ISSUER_URL: ${{ secrets.ISSUER_URL }}
   PROJECT: ${{ secrets.PROJECT }}
   USER_POOL_ARN: ${{ secrets.USER_POOL_ARN }}
-  ACCOUNT_ID: ${{ vars.ACCOUNT_ID }}
+  ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
   API_ENV: ${{ vars.API_ENV }}
   CODE_BUCKET_NAME: ${{ vars.CODE_BUCKET_NAME }}
   PARAMETERS_FILE: ${{ vars.PARAMETERS_FILE }}
