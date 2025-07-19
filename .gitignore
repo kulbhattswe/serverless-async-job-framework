@@ -1,6 +1,7 @@
 # AWS specific
-#parameters.json
+parameters.json
 updated-parameters.json
+updated2-parameters.json
 .aws/
 aws-exports.js
 
