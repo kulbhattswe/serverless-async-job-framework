@@ -31,36 +31,51 @@ else
   echo "Bucket already exists"
 fi
 
-# Zip Lambda functions
+# ---- Hashing and Conditional Upload of Lambda Zips ----
 echo "Zipping Lambda functions..."
 zip -j jobhandler.zip src/jobhandler.py
 zip -j jobworker.zip src/jobworker.py
 
+JOBHANDLER_HASH=$(md5sum jobhandler.zip | awk '{print $1}')
+JOBWORKER_HASH=$(md5sum jobworker.zip | awk '{print $1}')
+
+JOB_HANDLER_S3_KEY="lambda/jobhandler-${JOBHANDLER_HASH}.zip"
+JOB_WORKER_S3_KEY="lambda/jobworker-${JOBWORKER_HASH}.zip"
+
 # Upload to S3
-echo "Uploading zips to S3..."
-upload_if_changed() {
+upload_if_missing() {
   local file=$1
   local key=$2
-
-  echo "Checking if upload is needed for $file..."
-  local local_md5=$(md5sum "$file" | awk '{{print $1}}')
-
-  local s3_md5=$(aws s3api head-object \
-    --bucket "$CODE_BUCKET_NAME" \
-    --key "$key" \
-    --query ETag --output text 2>/dev/null | tr -d '"')
-
-  if [[ "$local_md5" != "$s3_md5" ]]; then
-    echo "Uploading $file to s3://$CODE_BUCKET_NAME/$key"
-    aws s3 cp "$file" "s3://$CODE_BUCKET_NAME/$key"
+  if aws s3 ls "s3://${CODE_BUCKET_NAME}/${key}" > /dev/null 2>&1; then
+    echo "$file already uploaded as $key"
   else
-    echo "No changes in $file. Skipping upload."
+    echo "Uploading $file to s3://${CODE_BUCKET_NAME}/${key}"
+    aws s3 cp "$file" "s3://${CODE_BUCKET_NAME}/${key}"
   fi
 }
 
-upload_if_changed jobhandler.zip lambda/jobhandler.zip
-upload_if_changed jobworker.zip lambda/jobworker.zip
+upload_if_missing jobhandler.zip "$JOB_HANDLER_S3_KEY"
+upload_if_missing jobworker.zip "$JOB_WORKER_S3_KEY"
 
+# ---- Extend parameters JSON ----
+INPUT_PARAM_FILE=${PARAMETERS_FILE:-updated-parameters.json}
+OUTPUT_PARAM_FILE=updated2-parameters.json
+
+if command -v jq >/dev/null 2>&1; then
+  jq '. + [
+    {"ParameterKey": "JobHandlerS3Key", "ParameterValue": "'$JOB_HANDLER_S3_KEY'"},
+    {"ParameterKey": "JobWorkerS3Key", "ParameterValue": "'$JOB_WORKER_S3_KEY'"}
+  ]' "$INPUT_PARAM_FILE" > "$OUTPUT_PARAM_FILE"
+else
+  echo "jq not found, falling back to manual append"
+  cp "$INPUT_PARAM_FILE" "$OUTPUT_PARAM_FILE"
+  sed -i '' -e '$d' "$OUTPUT_PARAM_FILE"
+  echo "  ,{"ParameterKey":"JobHandlerS3Key","ParameterValue":"$JOB_HANDLER_S3_KEY"}," >> "$OUTPUT_PARAM_FILE"
+  echo "   {"ParameterKey":"JobWorkerS3Key","ParameterValue":"$JOB_WORKER_S3_KEY"}" >> "$OUTPUT_PARAM_FILE"
+  echo "]" >> "$OUTPUT_PARAM_FILE"
+fi
+
+echo "Wrote $OUTPUT_PARAM_FILE with updated Lambda S3 keys"
 
 # Colors for output
 RED='\033[0;31m'
@@ -71,7 +86,9 @@ NC='\033[0m' # No Color
 # Configuration
 STACK_NAME=${STACK_NAME}
 TEMPLATE_FILE=${TEMPLATE_FILE:-"template.yaml"}
-PARAMETERS_FILE=${PARAMETERS_FILE:-"updated-parameters.json"}
+#PARAMETERS_FILE=${PARAMETERS_FILE:-"updated-parameters.json"}
+# Use the updated parameters file
+PARAMETERS_FILE=${OUTPUT_PARAM_FILE}
 
 REGION=${REGION:-"us-east-1"}
 echo "Using PARAMETERS_FILE  name: $PARAMETERS_FILE"

@@ -32,6 +32,14 @@ Parameters:
     Type: String
     Description: S3 bucket name for Lambda code deployment
   
+  JobHandlerS3Key:
+    Type: String
+    Description: S3 key for JobHandler Lambda ZIP
+  
+  JobWorkerS3Key:
+    Type: String
+    Description: S3 key for JobWorker Lambda ZIP
+    
 
 Resources:
   # S3 Bucket for job files
@@ -218,7 +226,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${Project}-jobhandler'
       Runtime: python3.12
-      Handler: index.lambda_handler
+      Handler: jobhandler.lambda_handler
       Role: !GetAtt JobHandlerRole.Arn
       Timeout: 60
       MemorySize: 128
@@ -229,7 +237,7 @@ Resources:
           S3_BUCKET_NAME: !Ref JobsDemoBucket
       Code:
         S3Bucket: !Sub '${CodeBucketName}'
-        S3Key: lambda/jobhandler.zip
+        S3Key: !Ref JobHandlerS3Key
       Tags:
         - Key: Project
           Value: !Ref Project
@@ -240,7 +248,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${Project}-jobhandlerworker'
       Runtime: python3.12
-      Handler: index.lambda_handler
+      Handler: jobworker.lambda_handler
       Role: !GetAtt JobHandlerWorkerRole.Arn
       Timeout: 60
       MemorySize: 128
@@ -250,7 +258,7 @@ Resources:
           S3_BUCKET_NAME: !Ref JobsDemoBucket
       Code:
         S3Bucket: !Sub '${CodeBucketName}'
-        S3Key: lambda/jobworker.zip
+        S3Key: !Ref JobWorkerS3Key
       Tags:
         - Key: Project
           Value: !Ref Project

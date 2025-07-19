@@ -52,56 +52,61 @@ def lambda_handler(event, context):
             return response(405, {'error': 'Method not allowed'})
                                       
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error: {str(e)}",  exc_info=True)
         return response(500, {'error': 'Internal server error'})
                     
 def handle_post(event, context):
-    # Extract user_id from JWT claims (v2.0 format)
-    jwt_claims = event['requestContext']['authorizer']['jwt']['claims']
-    user_id = jwt_claims['sub']
-    
-    # Parse request body
-    body = json.loads(event['body'])
-    name = body.get('name')
-    action = body.get('action')
-    context1 = body.get('context1')
-    context2 = body.get('context2')
-    
-    # Generate job_id
-    job_id = str(uuid.uuid4())
-    
-    # Create job item for SQS
-    job_item = {
-        'job_id': job_id,
-        'name': name,
-        'action': action,
-        'context1': context1,
-        'context2': context2,
-        'user_id': user_id
-    }
-       
-    logger.info(f"Sending to queue job_item={job_item}")
+    try:
+        # Validate request body 
+        # Extract user_id from JWT claims (v2.0 format)
+        jwt_claims = event['requestContext']['authorizer']['jwt']['claims']
+        user_id = jwt_claims['sub']
         
-    # Send to SQS
-    sqs.send_message(
-        QueueUrl=os.environ['JOBS_QUEUE_URL'],
-        MessageBody=json.dumps(job_item)
-    )
-    
-    # Create DynamoDB entry
-    table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
-    table.put_item(
-        Item={
+        # Parse request body
+        body = json.loads(event['body'])
+        name = body.get('name')
+        action = body.get('action')
+        context1 = body.get('context1')
+        context2 = body.get('context2')
+        
+        # Generate job_id
+        job_id = str(uuid.uuid4())
+        
+        # Create job item for SQS
+        job_item = {
             'job_id': job_id,
-            'user_id': user_id,
-            'status': 'PENDING',
-            'createdAt': datetime.now(timezone.utc).isoformat(),
+            'name': name,
             'action': action,
-            'name': name
+            'context1': context1,
+            'context2': context2,
+            'user_id': user_id
         }
-    )
-    
-    return response(201, {'job_id': job_id, 'status': 'PENDING'})
+        
+        logger.info(f"Sending to queue job_item={job_item}")
+            
+        # Send to SQS
+        sqs.send_message(
+            QueueUrl=os.environ['JOBS_QUEUE_URL'],
+            MessageBody=json.dumps(job_item)
+        )
+        
+        # Create DynamoDB entry
+        table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+        table.put_item(
+            Item={
+                'job_id': job_id,
+                'user_id': user_id,
+                'status': 'PENDING',
+                'createdAt': datetime.now(timezone.utc).isoformat(),
+                'action': action,
+                'name': name
+            }
+        )
+        
+        return response(201, {'job_id': job_id, 'status': 'PENDING'})
+    except Exception as e:
+        logger.error(f"Error processing job: {str(e)}", exc_info=True)
+        return response(500, {'error': 'Failed to submit job'}) 
             
 def handle_get(event, context):
     try:
@@ -188,7 +193,7 @@ def handle_get_all_jobs(event, context):
         })                                    
         
     except Exception as e:
-        logger.error(f"Error querying jobs: {str(e)}")
+        logger.error(f"Error querying jobs: {str(e)}", exc_info=True)
         return response(500, {'error': 'Failed to retrieve jobs'})
 
 def handle_ping(event, context):

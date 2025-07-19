@@ -153,7 +153,7 @@ CODE_BUCKET_NAME=$(echo jobsdemocodebucket-${ACCOUNT_ID}-${REGION})
    ``` 
 ## Parameters
 
-Create a `parameters.json` file:
+Verify the generated parameters file `updated-parameters.json` file. If any of the values are missing, add them to your .env.
 
 ```json
 [
@@ -176,6 +176,10 @@ Create a `parameters.json` file:
   {
     "ParameterKey": "ApiEnv",
     "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "CodeBucketName",
+    "ParameterValue": "bucket"
   }
 ]
 ```

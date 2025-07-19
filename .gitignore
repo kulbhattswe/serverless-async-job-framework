@@ -1,5 +1,5 @@
 # AWS specific
-parameters.json
+#parameters.json
 updated-parameters.json
 .aws/
 aws-exports.js
@@ -11,7 +11,7 @@ deployment-artifacts/
 # Logs
 *.log
 logs/
-
+#
 # Environment variables
 .env
 .env.local
