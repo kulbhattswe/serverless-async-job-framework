@@ -59,10 +59,10 @@ jobs:
           echo "# Generated .env from GitHub Actions env" > .env
           env | grep -E '^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY)=' >> .env
           env | grep -E '^(COGNITO_CLIENT_ID|COGNITO_USER_POOL_ID)=' >> .env
-          env | grep -E '^(COGNITO_REGION|ISSUER_URL|PROJECT)=' >> .env
+          env | grep -E '^(COGNITO_REGION|REGION|ISSUER_URL|PROJECT)=' >> .env
           env | grep -E '^(USER_POOL_ARN|ACCOUNT_ID|API_ENV)=' >> .env
           env | grep -E '^(CODE_BUCKET_NAME|PARAMETERS_FILE)=' >> .env
-          env | grep -E '^(REGION|STACK_NAME|TEMPLATE_FILE)=' >> .env
+          env | grep -E '^(STACK_NAME|TEMPLATE_FILE)=' >> .env
 
       - name: Expand .env
         run: ./expand_env.sh
