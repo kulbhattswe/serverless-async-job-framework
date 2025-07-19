@@ -64,9 +64,11 @@ jobs:
           env | grep -E '^(CODE_BUCKET_NAME|PARAMETERS_FILE)=' >> .env
           env | grep -E '^(REGION|STACK_NAME|TEMPLATE_FILE)=' >> .env
 
+      - name: Expand .env
+        run: ./expand_env.sh
 
       - name: Run make target
         run: |
           set -e -x  # <- print commands before execution
-          export $(grep -v '^#' .env | xargs)
+          export $(grep -v '^#' .env.generated | xargs)
           make  ${{ github.event.inputs.target }}
