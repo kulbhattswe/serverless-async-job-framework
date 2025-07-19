@@ -26,6 +26,10 @@ logs/
 *.swp
 *.swo
 
+# Python specific 
+__pycache__/
+# lambda function zips
+*.zip
 # OS
 .DS_Store
 Thumbs.db
