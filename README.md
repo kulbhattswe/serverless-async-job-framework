@@ -114,6 +114,8 @@ STACK_NAME=job-processing-stack
 TEMPLATE_FILE=template.yaml
 PARAMETERS_FILE=updated-parameters.json
 REGION=${COGNITO_REGION}
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+CODE_BUCKET_NAME=$(echo jobsdemocodebucket-${ACCOUNT_ID}-${REGION})
 ```
 
 2. **Deploy the stack:**
