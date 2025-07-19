@@ -69,4 +69,4 @@ jobs:
         run: |
           set -x  # <- print commands before execution
           export $(grep -v '^#' .env | xargs)
-          make ${{ github.event.inputs.target }}
+          make -n ${{ github.event.inputs.target }}
