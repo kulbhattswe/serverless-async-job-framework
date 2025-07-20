@@ -28,7 +28,7 @@ env:
   USER_POOL_ARN: ${{ secrets.USER_POOL_ARN }}
   ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
   API_ENV: ${{ vars.API_ENV }}
-  CODE_BUCKET_NAME: ${{ vars.CODE_BUCKET_NAME }}
+  CODE_BUCKET_NAME: ${{ secrets.CODE_BUCKET_NAME }}
   PARAMETERS_FILE: ${{ vars.PARAMETERS_FILE }}
   REGION: ${{ vars.REGION }}
   STACK_NAME: ${{ vars.STACK_NAME }}
