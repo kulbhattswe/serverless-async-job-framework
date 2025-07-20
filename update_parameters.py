@@ -17,7 +17,8 @@ def load_env(env_file):
                 key, value = line.split('=', 1)
                 camel_key = kebab_to_camel(key)
                 env_vars[camel_key] = value.strip()
-                print(f"Key={camel_key}, value={value.strip()}")
+                if not os.environ.get("GITHUB_ACTIONS"):
+                    print(f"Key={camel_key}, value={value.strip()}")
     return env_vars
 
 def update_parameters(params_file, env_vars, output_file):
