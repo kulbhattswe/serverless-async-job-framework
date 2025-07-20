@@ -11,6 +11,11 @@ source .env
 #ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 #CODE_BUCKET_NAME="jobsdemocodebucket-${ACCOUNT_ID}-${REGION}"
 
+# Due to secrets in GitHub Actions, we need to ensure the bucket name is derived correctly
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+REGION=${REGION:-us-east-1}
+CODE_BUCKET_NAME="jobsdemocodebucket-${ACCOUNT_ID}-${REGION}"
+
 echo "Using S3 bucket for Lambda code: $CODE_BUCKET_NAME, region: $REGION"
 
 # Create bucket if it doesn't exist
