@@ -58,9 +58,15 @@ upload_if_missing() {
   local file=$1
   local key=$2
   if aws s3 ls "s3://${CODE_BUCKET_NAME}/${key}" > /dev/null 2>&1; then
-    echo "$file already uploaded as $key"
+    echo "$file already uploaded"
+    if [ -z "$GITHUB_ACTIONS" ]; then
+        echo " as key: $key"
+    fi
   else
-    echo "Uploading $file to s3://${CODE_BUCKET_NAME}/${key}"
+    echo "Uploading $file to s3:"
+    if [ -z "$GITHUB_ACTIONS" ]; then
+        echo "Code bucket: s3://${CODE_BUCKET_NAME}/${key}"
+    fi
     aws s3 cp "$file" "s3://${CODE_BUCKET_NAME}/${key}"
   fi
 }
