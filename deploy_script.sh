@@ -67,7 +67,7 @@ upload_if_missing() {
     if [ -z "$GITHUB_ACTIONS" ]; then
         echo "Code bucket: s3://${CODE_BUCKET_NAME}/${key}"
     fi
-    aws s3 cp "$file" "s3://${CODE_BUCKET_NAME}/${key}"
+    aws s3 cp "$file" "s3://${CODE_BUCKET_NAME}/${key}" --quiet
   fi
 }
 

@@ -1,4 +1,4 @@
-name: Run Make Target
+name: AWS Stack actions
 
 on:
   workflow_dispatch:
@@ -69,6 +69,6 @@ jobs:
 
       - name: Run make target
         run: |
-          set -e -x  # <- print commands before execution
+          set -e  # <- print commands before execution
           export $(grep -v '^#' .env.generated | xargs)
           make  ${{ github.event.inputs.target }}
