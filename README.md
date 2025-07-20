@@ -1,3 +1,5 @@
+![CI](https://github.com/kulbhattswe/serverless-async-job-framework/actions/workflows/make-target.yaml/workflows/make-target.yml/badge.svg)
+
 # AWS Serverless Job Processing Stack
 
 A complete serverless job processing system built with AWS CloudFormation, featuring API Gateway, Lambda functions, SQS, DynamoDB, and S3.
