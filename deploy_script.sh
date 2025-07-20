@@ -16,11 +16,17 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGION=${REGION:-us-east-1}
 CODE_BUCKET_NAME="jobsdemocodebucket-${ACCOUNT_ID}-${REGION}"
 
-echo "Using S3 bucket for Lambda code: $CODE_BUCKET_NAME, region: $REGION"
+echo "Using S3 bucket for Lambda  region: $REGION"
+if [ -z "$GITHUB_ACTIONS" ]; then
+  echo "Code bucket: $CODE_BUCKET_NAME"
+fi
 
 # Create bucket if it doesn't exist
 if ! aws s3 ls "s3://$CODE_BUCKET_NAME" > /dev/null 2>&1; then
-  echo "Creating bucket: $CODE_BUCKET_NAME"
+  echo "Creating bucket: "
+  if [ -z "$GITHUB_ACTIONS" ]; then
+    echo "Code bucket: $CODE_BUCKET_NAME"
+  fi
   if [ "$REGION" = "us-east-1" ]; then
      aws s3api create-bucket \
         --bucket "$CODE_BUCKET_NAME" \
