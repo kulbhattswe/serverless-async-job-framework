@@ -69,6 +69,6 @@ jobs:
 
       - name: Run make target
         run: |
-          #set -e  # <- print commands before execution
+          set -e  # <- print commands before execution
           export $(grep -v '^#' .env.generated | xargs)
           make  ${{ github.event.inputs.target }}

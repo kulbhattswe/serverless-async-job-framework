@@ -282,7 +282,7 @@ show_events() {
     aws cloudformation describe-stack-events \
         --stack-name "$STACK_NAME" \
         --region "$REGION" \
-        --max-items 20
+        --max-items 50
 }
 
 show_logs() {
