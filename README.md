@@ -1,4 +1,4 @@
-![CI](https://github.com/kulbhattswe/serverless-async-job-framework/actions/workflows/make-target.yaml/workflows/make-target.yml/badge.svg)
+![Deploy to AWS](https://github.com/kulbhattswe/serverless-async-job-framework/actions/workflows/make-target.yaml/badge.svg)
 
 # AWS Serverless Job Processing Stack
 
